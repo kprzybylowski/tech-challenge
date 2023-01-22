@@ -3,8 +3,9 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Symfony\Component\Console\Exception\RuntimeException;
 use Exception;
-
+``
 class QueryUrl extends Command
 {
     /**
@@ -55,7 +56,7 @@ class QueryUrl extends Command
      * @param string $api
      * @return array
      */
-    private function getProxy(string $api)
+    private function getProxy(string $api): array
     {
         $proxies = [];
         try {
@@ -79,11 +80,16 @@ class QueryUrl extends Command
      *
      * @param string $url
      * @param array $proxies
-     * @return string
+     * @return string|void
+     * @throws RuntimeException
      */
-    private function requestUrl(string $url, array $proxies)
+    private function requestUrl(string $url, array $proxies): string
     {
         try {
+            if (filter_var($url, FILTER_VALIDATE_URL) === FALSE) {
+                throw new RuntimeException('The url parameter must be a valid URL');
+            }
+
             foreach ($proxies as $proxy) {
                 $curl = curl_init($url);
 
@@ -112,7 +118,7 @@ class QueryUrl extends Command
      * @param string $response
      * @return void
      */
-    private function consoleOutput(string $response)
+    private function consoleOutput(string $response): void
     {
         try {
             $parts = explode("\r\n\r\n", $response, 2);
@@ -129,7 +135,7 @@ class QueryUrl extends Command
      * @param string $url
      * @return void
      */
-    private function logEvent(string $url)
+    private function logEvent(string $url): void
     {
         try {
             $now = date('d/m/Y H:i:s');
