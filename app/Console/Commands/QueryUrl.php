@@ -3,67 +3,139 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Exception;
 
 class QueryUrl extends Command
 {
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
     protected $signature = 'query:url {url}';
 
-    protected $description = 'N/A';
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Gets headers from given url, outputs and logs results';
 
+    /**
+     * Create a new command instance.
+     *
+     * @return void
+     */
     public function __construct()
     {
         parent::__construct();
     }
 
+    /**
+     * Execute the console command.
+     *
+     * @return mixed
+     */
     public function handle()
     {
-        // Find a proxy.
-
-        $curl = curl_init('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=yes&anonymity=all');
-
-        curl_setopt($curl, CURLOPT_HEADER, 0);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-
-        $response = curl_exec($curl);
-
-        curl_close($curl);
-
-        $proxies = explode("\n", $response);
-
-        // Make request.
-
+        $api = config('remoteApi.url.proxyscrape');
         $url = $this->argument('url');
 
-        foreach ($proxies as $proxy) {
-            $curl = curl_init($url);
+        $proxies = $this->getProxy($api);
+        $response = $this->requestUrl($url, $proxies);
+        $this->consoleOutput($response);
+        $this->logEvent($url);
 
-            curl_setopt($curl, CURLOPT_HEADER, 1);
-            curl_setopt($curl, CURLOPT_PROXY, $proxy);
+        return 0;
+    }
+
+    /**
+     * Queries an API to find an open proxy
+     *
+     * @param string $api
+     * @return array
+     */
+    private function getProxy(string $api)
+    {
+        $proxies = [];
+        try {
+            $curl = curl_init($api);
+            curl_setopt($curl, CURLOPT_HEADER, 0);
             curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 
             $response = curl_exec($curl);
-
             curl_close($curl);
 
-            if (!$response) {
-                continue;
-            }
+            $proxies = explode("\n", $response);
+        } catch (Exception $e) {
+            $this->error('Error while getting proxies: ' . $e->getMessage());
         }
 
-        // Output HTTP headers.
+        return $proxies;
+    }
 
-        $parts = explode("\r\n\r\n", $response, 2);
+    /**
+     * Makes a request to the given URI via an open proxy
+     *
+     * @param string $url
+     * @param array $proxies
+     * @return string
+     */
+    private function requestUrl(string $url, array $proxies)
+    {
+        try {
+            foreach ($proxies as $proxy) {
+                $curl = curl_init($url);
 
-        $header = $parts[0];
+                curl_setopt($curl, CURLOPT_HEADER, 1);
+                curl_setopt($curl, CURLOPT_PROXY, $proxy);
+                curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 
-        $this->line($header);
+                $response = curl_exec($curl);
 
-        // Log this request.
+                curl_close($curl);
 
-        $now = date('d/m/Y H:i:s');
+                if (!$response) {
+                    continue;
+                }
+            }
 
-        file_put_contents(storage_path() . '/logs/results.log', "{$now}: {$url}\r\n", FILE_APPEND);
+            return $response;
+        } catch (Exception $e) {
+            $this->error('Error while requesting url: ' . $e->getMessage());
+        }
+    }
 
-        return 0;
+    /**
+     * Outputs the returned HTTP headers to the console
+     *
+     * @param string $response
+     * @return void
+     */
+    private function consoleOutput(string $response)
+    {
+        try {
+            $parts = explode("\r\n\r\n", $response, 2);
+            $header = $parts[0];
+            $this->line($header);
+        } catch (Exception $e) {
+            $this->error('Error outputting results: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Logs the request to a file
+     *
+     * @param string $url
+     * @return void
+     */
+    private function logEvent(string $url)
+    {
+        try {
+            $now = date('d/m/Y H:i:s');
+            file_put_contents(storage_path() . '/logs/results.log', "{$now}: {$url}\r\n", FILE_APPEND);
+        } catch (Exception $e) {
+            $this->error('Error outputting results: ' . $e->getMessage());
+        }
     }
 }
